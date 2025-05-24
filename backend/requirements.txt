@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard] #dukungan websockets dan lain-lain
+pydantic
+python-dotenv #.env lokal
+
+#depedensi AI 
+transformers[torch]
+# torch
+sentencepiece
+accelerate
