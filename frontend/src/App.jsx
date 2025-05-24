@@ -23,7 +23,7 @@ function App() {
       // determinedBackendUrl = "https://xxxxxxxxxx.gradio.live"; // Ganti dengan URL Gradio Anda jika tes lokal
       console.warn("App.jsx: REACT_APP_BACKEND_URL tidak diset. Frontend mungkin tidak bisa menghubungi backend Gradio.");
       // Jika tidak ada, mungkin set ke string kosong atau fallback yang tidak akan jalan agar error jelas
-      determinedBackendUrl = ''; 
+      determinedBackendUrl = defaultLocalhostUrl; 
     }
     
     setBackendUrl(determinedBackendUrl);
