@@ -1,4 +1,4 @@
-// frontend/src/App.jsx
+// frontend/src/App.jsx (Versi Debug untuk Vercel - useEffect Sangat Sederhana)
 import React, { useState, useEffect } from 'react';
 import CVForm from './components/CVForm';
 import CVOutput from './components/CVOutput';
@@ -11,45 +11,25 @@ function App() {
   const [backendUrl, setBackendUrl] = useState(''); // Inisialisasi dengan string kosong
 
   useEffect(() => {
-    let determinedBackendUrl = ''; // Inisialisasi dengan string kosong
-    // Variabel defaultLocalhostUrl DIHAPUS sepenuhnya
-
-    // Uncomment log ini jika perlu untuk debugging saat pengembangan
-    /*
-    console.log(
-      "App.jsx useEffect: Initializing URL detection.",
-      "REACT_APP_BACKEND_URL:", process.env.REACT_APP_BACKEND_URL,
-      "window.GITPOD_WORKSPACE_URL:", typeof window !== 'undefined' ? window.GITPOD_WORKSPACE_URL : "N/A"
-    );
-    */
+    // --- useEffect SANGAT DISEDERHANAKAN untuk DEBUG VERCEL BUILD ---
+    let determinedBackendUrl = '';
+    console.log("App.jsx DEBUG useEffect: Starting URL determination...");
 
     if (process.env.REACT_APP_BACKEND_URL) {
-      // Prioritas 1: Digunakan oleh Vercel (dari Environment Variables di Vercel)
       determinedBackendUrl = process.env.REACT_APP_BACKEND_URL;
-      // console.log("App.jsx useEffect: Using REACT_APP_BACKEND_URL:", determinedBackendUrl);
-    } else if (typeof window !== 'undefined' && window.GITPOD_WORKSPACE_URL) {
-      // Prioritas 2: Digunakan untuk pengembangan di Gitpod (atau jika backend HF Spaces diakses dari Gitpod)
-      const gitpodWorkspaceUrl = window.GITPOD_WORKSPACE_URL;
-      const backendPort = 8000; // Port backend Anda di Gitpod/HF Spaces
-      const gitpodUrlWithoutProtocol = gitpodWorkspaceUrl.startsWith('https://')
-                                     ? gitpodWorkspaceUrl.substring("https://".length)
-                                     : gitpodWorkspaceUrl;
-      determinedBackendUrl = `https://${backendPort}-${gitpodUrlWithoutProtocol}`;
-      // console.log("App.jsx useEffect: Using Gitpod URL:", determinedBackendUrl);
+      console.log("App.jsx DEBUG useEffect: Using REACT_APP_BACKEND_URL:", determinedBackendUrl);
     } else {
-      // Jika tidak ada URL yang valid terdeteksi, determinedBackendUrl akan tetap string kosong.
-      // Pesan error akan ditangani di handleGenerateSummary jika backendUrl kosong.
+      // Jika REACT_APP_BACKEND_URL tidak ada, biarkan determinedBackendUrl kosong.
+      // Aplikasi akan error saat mencoba fetch, tapi ini untuk tes build dulu.
       console.error(
-        "App.jsx useEffect: CRITICAL - No valid backend URL could be determined. " +
-        "REACT_APP_BACKEND_URL (for Vercel/Gradio) or " +
-        "window.GITPOD_WORKSPACE_URL (for Gitpod dev) is missing. " +
+        "App.jsx DEBUG useEffect: CRITICAL - REACT_APP_BACKEND_URL is MISSING. " +
         "Frontend will not be able to contact the backend."
       );
     }
     
     setBackendUrl(determinedBackendUrl);
-    // console.log("App.jsx useEffect: Final backendUrl in state:", determinedBackendUrl);
-
+    console.log("App.jsx DEBUG useEffect: Final backendUrl in state:", determinedBackendUrl);
+    // --- AKHIR useEffect SANGAT DISEDERHANAKAN ---
   }, []); // Dependency array kosong, hanya run sekali saat mount
 
   const handleGenerateSummary = async (inputText) => {
@@ -57,30 +37,30 @@ function App() {
     setError(null);
     setSummary('');
 
-    if (!backendUrl) { // Validasi jika backendUrl kosong setelah useEffect
+    // Log ini penting untuk melihat URL mana yang akhirnya digunakan
+    console.log("App.jsx DEBUG handleGenerateSummary: Attempting to use backendUrl:", backendUrl);
+
+    if (!backendUrl) { 
         const errMsg = "Konfigurasi URL Backend bermasalah. URL tidak diset atau kosong. " +
-                       "Pastikan REACT_APP_BACKEND_URL (di Vercel) atau " +
-                       "deteksi URL Gitpod (saat di Gitpod) berfungsi dengan benar.";
+                       "Pastikan REACT_APP_BACKEND_URL (di Vercel) diset dengan benar.";
         setError(errMsg);
-        console.error("App.jsx handleGenerateSummary Error:", errMsg, "Current backendUrl state is empty.");
+        console.error("App.jsx DEBUG handleGenerateSummary Error:", errMsg);
         setIsLoading(false);
         return;
     }
 
-    // Konstruksi URL API berdasarkan apakah backendUrl adalah Gradio atau FastAPI biasa
     let finalApiUrl = backendUrl;
+    // Asumsi: Jika URL dari REACT_APP_BACKEND_URL adalah URL Gradio (misal, diakhiri .gradio.live)
+    // Maka kita tambahkan path API Gradio. Jika tidak, kita asumsikan itu FastAPI biasa.
     const isLikelyGradioUrl = backendUrl.includes('.gradio.live');
     
     if (isLikelyGradioUrl) {
-        const gradioApiEndpointPath = "/api/predict/"; // Verifikasi path ini!
+        const gradioApiEndpointPath = "/api/predict/"; // VERIFIKASI PATH INI!
         if (!finalApiUrl.endsWith('/')) {
             finalApiUrl += '/';
         }
-        // Hati-hati agar tidak menambahkan path API jika sudah ada
         if (finalApiUrl.includes('/api/')) {
-             // Jika sudah ada /api/, asumsikan sudah benar atau path API berbeda, gunakan apa adanya.
-             // Ini mungkin perlu disesuaikan jika URL Gradio bisa sangat bervariasi.
-             // console.warn(`App.jsx: backendUrl (${backendUrl}) sudah mengandung /api/. Menggunakan URL apa adanya untuk Gradio: ${finalApiUrl}`);
+             // Jika sudah ada /api/, gunakan apa adanya (hati-hati jika path berbeda)
         } else {
             finalApiUrl = finalApiUrl.endsWith('/') 
                           ? `${finalApiUrl.slice(0, -1)}${gradioApiEndpointPath}` 
@@ -91,13 +71,12 @@ function App() {
         if (!finalApiUrl.endsWith('/')) {
             finalApiUrl += '/';
         }
-        // Hanya tambahkan 'summarize' jika belum ada di akhir URL
-        if (!finalApiUrl.endsWith('summarize')) {
+        if (!finalApiUrl.endsWith('summarize')) { // Hindari duplikasi jika sudah ada
             finalApiUrl += 'summarize';
         }
     }
 
-    // console.log(`App.jsx handleGenerateSummary: Submitting to final API URL: ${finalApiUrl}`);
+    console.log(`App.jsx DEBUG handleGenerateSummary: Submitting to final API URL: ${finalApiUrl}`);
 
     try {
       const payload = isLikelyGradioUrl 
@@ -152,7 +131,7 @@ function App() {
       }
 
     } catch (err) {
-      console.error("App.jsx handleGenerateSummary: Error during API call:", err);
+      console.error("App.jsx DEBUG handleGenerateSummary: Error during API call:", err);
       const errorMessage = err.message || "Terjadi kesalahan yang tidak diketahui.";
       let displayError = errorMessage;
       if (!(errorMessage.includes("URL:") || errorMessage.toLowerCase().includes("backend")) && 
@@ -193,7 +172,7 @@ function App() {
         <p>Powered by React, dan AI.</p>
         {/* 
         <p className="text-xs mt-1">
-          DevInfo: Backend URL -> {backendUrl || "Not set/configured"}
+          DevInfo (DEBUG): Backend URL -> {backendUrl || "Not set/configured"}
         </p>
         */}
       </footer>
