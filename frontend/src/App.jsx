@@ -1,4 +1,4 @@
-// frontend/src/App.jsx (Versi Debug untuk Vercel - useEffect Sangat Sederhana)
+// frontend/src/App.jsx (Versi Lengkap Direkomendasikan)
 import React, { useState, useEffect } from 'react';
 import CVForm from './components/CVForm';
 import CVOutput from './components/CVOutput';
@@ -11,25 +11,47 @@ function App() {
   const [backendUrl, setBackendUrl] = useState(''); // Inisialisasi dengan string kosong
 
   useEffect(() => {
-    // --- useEffect SANGAT DISEDERHANAKAN untuk DEBUG VERCEL BUILD ---
     let determinedBackendUrl = '';
-    console.log("App.jsx DEBUG useEffect: Starting URL determination...");
+    // Variabel defaultLocalhostUrl DIHAPUS untuk menghindari masalah linting Vercel
+
+    // Uncomment log ini jika perlu untuk debugging saat pengembangan atau jika ada masalah deteksi URL
+    /*
+    console.log(
+      "App.jsx useEffect: Initializing URL detection.",
+      "REACT_APP_BACKEND_URL:", process.env.REACT_APP_BACKEND_URL,
+      "window.GITPOD_WORKSPACE_URL:", typeof window !== 'undefined' ? window.GITPOD_WORKSPACE_URL : "N/A"
+    );
+    */
 
     if (process.env.REACT_APP_BACKEND_URL) {
+      // Prioritas 1: Digunakan oleh Vercel (dari Environment Variables di Vercel)
+      // Ini akan berisi URL Gradio Share Link Anda atau URL Hugging Face Spaces Anda.
       determinedBackendUrl = process.env.REACT_APP_BACKEND_URL;
-      console.log("App.jsx DEBUG useEffect: Using REACT_APP_BACKEND_URL:", determinedBackendUrl);
+      // console.log("App.jsx useEffect: Using REACT_APP_BACKEND_URL:", determinedBackendUrl);
+    } else if (typeof window !== 'undefined' && window.GITPOD_WORKSPACE_URL) {
+      // Prioritas 2: Digunakan untuk pengembangan di Gitpod jika Anda menjalankan backend FastAPI di sana.
+      // Jika Anda HANYA menggunakan Gradio/Colab, blok ini mungkin tidak akan pernah terpakai lagi.
+      const gitpodWorkspaceUrl = window.GITPOD_WORKSPACE_URL;
+      const backendPort = 8000; // Port backend FastAPI Anda di Gitpod
+      const gitpodUrlWithoutProtocol = gitpodWorkspaceUrl.startsWith('https://')
+                                     ? gitpodWorkspaceUrl.substring("https://".length)
+                                     : gitpodWorkspaceUrl;
+      determinedBackendUrl = `https://${backendPort}-${gitpodUrlWithoutProtocol}`;
+      // console.log("App.jsx useEffect: Using Gitpod URL (FastAPI backend):", determinedBackendUrl);
     } else {
-      // Jika REACT_APP_BACKEND_URL tidak ada, biarkan determinedBackendUrl kosong.
-      // Aplikasi akan error saat mencoba fetch, tapi ini untuk tes build dulu.
+      // Jika tidak ada URL yang valid terdeteksi, determinedBackendUrl akan tetap string kosong.
+      // Pesan error akan ditangani di handleGenerateSummary jika backendUrl kosong.
       console.error(
-        "App.jsx DEBUG useEffect: CRITICAL - REACT_APP_BACKEND_URL is MISSING. " +
+        "App.jsx useEffect: CRITICAL - No valid backend URL could be determined. " +
+        "Ensure REACT_APP_BACKEND_URL (for Vercel/production) or " +
+        "window.GITPOD_WORKSPACE_URL (for Gitpod dev with FastAPI backend) is available. " +
         "Frontend will not be able to contact the backend."
       );
     }
     
     setBackendUrl(determinedBackendUrl);
-    console.log("App.jsx DEBUG useEffect: Final backendUrl in state:", determinedBackendUrl);
-    // --- AKHIR useEffect SANGAT DISEDERHANAKAN ---
+    // console.log("App.jsx useEffect: Final backendUrl in state:", determinedBackendUrl);
+
   }, []); // Dependency array kosong, hanya run sekali saat mount
 
   const handleGenerateSummary = async (inputText) => {
@@ -37,52 +59,62 @@ function App() {
     setError(null);
     setSummary('');
 
-    // Log ini penting untuk melihat URL mana yang akhirnya digunakan
-    console.log("App.jsx DEBUG handleGenerateSummary: Attempting to use backendUrl:", backendUrl);
-
     if (!backendUrl) { 
         const errMsg = "Konfigurasi URL Backend bermasalah. URL tidak diset atau kosong. " +
-                       "Pastikan REACT_APP_BACKEND_URL (di Vercel) diset dengan benar.";
+                       "Pastikan REACT_APP_BACKEND_URL (di Vercel) atau " +
+                       "deteksi URL Gitpod (saat di Gitpod dengan backend FastAPI) berfungsi.";
         setError(errMsg);
-        console.error("App.jsx DEBUG handleGenerateSummary Error:", errMsg);
+        console.error("App.jsx handleGenerateSummary Error:", errMsg, "Current backendUrl state is empty.");
         setIsLoading(false);
         return;
     }
 
     let finalApiUrl = backendUrl;
-    // Asumsi: Jika URL dari REACT_APP_BACKEND_URL adalah URL Gradio (misal, diakhiri .gradio.live)
-    // Maka kita tambahkan path API Gradio. Jika tidak, kita asumsikan itu FastAPI biasa.
-    const isLikelyGradioUrl = backendUrl.includes('.gradio.live');
-    
-    if (isLikelyGradioUrl) {
-        const gradioApiEndpointPath = "/api/predict/"; // VERIFIKASI PATH INI!
-        if (!finalApiUrl.endsWith('/')) {
-            finalApiUrl += '/';
-        }
-        if (finalApiUrl.includes('/api/')) {
-             // Jika sudah ada /api/, gunakan apa adanya (hati-hati jika path berbeda)
-        } else {
-            finalApiUrl = finalApiUrl.endsWith('/') 
-                          ? `${finalApiUrl.slice(0, -1)}${gradioApiEndpointPath}` 
-                          : `${finalApiUrl}${gradioApiEndpointPath}`;
-        }
+    // Deteksi apakah URL backend adalah untuk Gradio atau FastAPI
+    // Heuristik sederhana: URL Gradio biasanya mengandung '.gradio.live'
+    // URL Hugging Face Spaces biasanya mengandung '.hf.space'
+    const isGradioBackend = backendUrl.includes('.gradio.live');
+    const isFastAPIBackend = !isGradioBackend; // Asumsi default adalah FastAPI jika bukan Gradio
+
+    // Sesuaikan path API dan payload berdasarkan tipe backend
+    let apiPath = '';
+    let payload = {};
+
+    if (isGradioBackend) {
+        apiPath = "/api/predict/"; // Verifikasi path ini untuk Gradio Anda!
+        payload = { data: [inputText] };
+        // console.log("App.jsx: Detected Gradio backend.");
+    } else if (isFastAPIBackend) { // Berarti ini Hugging Face Spaces atau backend FastAPI lokal/Gitpod
+        apiPath = "/summarize";
+        payload = { text: inputText };
+        // console.log("App.jsx: Detected FastAPI backend.");
     } else {
-        // Untuk FastAPI biasa, tambahkan /summarize
-        if (!finalApiUrl.endsWith('/')) {
-            finalApiUrl += '/';
-        }
-        if (!finalApiUrl.endsWith('summarize')) { // Hindari duplikasi jika sudah ada
-            finalApiUrl += 'summarize';
-        }
+        // Seharusnya tidak sampai sini jika backendUrl valid
+        setError("Tidak dapat menentukan tipe backend (Gradio/FastAPI) dari URL.");
+        setIsLoading(false);
+        return;
     }
 
-    console.log(`App.jsx DEBUG handleGenerateSummary: Submitting to final API URL: ${finalApiUrl}`);
+    // Konstruksi URL API final
+    if (!finalApiUrl.endsWith('/')) {
+        finalApiUrl += '/';
+    }
+    // Hati-hati agar tidak menambahkan path API jika sudah ada di backendUrl (jarang terjadi jika diset benar)
+    if (finalApiUrl.includes('/api/') && isGradioBackend) { 
+        // Jika sudah ada /api/ untuk Gradio, asumsikan sudah benar.
+        // Ini mungkin perlu penyesuaian lebih lanjut jika URL Gradio bisa sangat bervariasi.
+    } else if (finalApiUrl.endsWith(apiPath.substring(1)) && isFastAPIBackend && apiPath === "/summarize") {
+        // Jika sudah diakhiri /summarize untuk FastAPI, jangan tambahkan lagi.
+    }
+    else {
+        finalApiUrl = finalApiUrl.endsWith('/') 
+                      ? `${finalApiUrl.slice(0, -1)}${apiPath}` 
+                      : `${finalApiUrl}${apiPath}`;
+    }
+    
+    // console.log(`App.jsx handleGenerateSummary: Submitting to final API URL: ${finalApiUrl}`);
 
     try {
-      const payload = isLikelyGradioUrl 
-                      ? { data: [inputText] } 
-                      : { text: inputText };
-
       const response = await fetch(finalApiUrl, {
         method: 'POST',
         headers: {
@@ -107,36 +139,38 @@ function App() {
       const data = await response.json();
       
       let resultSummary = '';
-      if (isLikelyGradioUrl) {
+      if (isGradioBackend) {
         if (data && data.data && Array.isArray(data.data) && data.data.length > 0) {
           resultSummary = data.data[0];
-        } else if (data && data.error) {
+        } else if (data && data.error) { // Gradio kadang mengembalikan error di field 'error'
           throw new Error(`Backend Gradio mengembalikan error: ${data.error}`);
         } else {
           throw new Error("Format respons dari Gradio API tidak sesuai.");
         }
-      } else { // FastAPI
-        if (data && data.summary) {
+      } else if (isFastAPIBackend) {
+        if (data && data.summary) { // FastAPI kita mengembalikan di field 'summary'
           resultSummary = data.summary;
         } else {
           throw new Error("Format respons dari FastAPI tidak sesuai (field 'summary' tidak ditemukan).");
         }
       }
 
+      // Cek jika hasil summary adalah pesan error dari backend
       if (typeof resultSummary === 'string' && (resultSummary.startsWith("ERROR:") || resultSummary.startsWith("Error:"))) {
-          setError(`Backend mengembalikan error: ${resultSummary}`);
+          setError(`Backend mengembalikan pesan error: ${resultSummary}`);
           setSummary('');
       } else {
           setSummary(resultSummary);
       }
 
     } catch (err) {
-      console.error("App.jsx DEBUG handleGenerateSummary: Error during API call:", err);
+      console.error("App.jsx handleGenerateSummary: Error during API call:", err);
       const errorMessage = err.message || "Terjadi kesalahan yang tidak diketahui.";
       let displayError = errorMessage;
-      if (!(errorMessage.includes("URL:") || errorMessage.toLowerCase().includes("backend")) && 
+      // Perbaiki pesan error yang ditampilkan ke pengguna
+      if (!(errorMessage.includes("URL:") || errorMessage.toLowerCase().includes("backend") || errorMessage.toLowerCase().includes("gradio") || errorMessage.toLowerCase().includes("fastapi")) && 
           (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError") || errorMessage.toLowerCase().includes("cors"))) {
-        displayError = `Tidak dapat terhubung atau ada masalah CORS dengan server backend. Pastikan server berjalan dan dapat diakses di ${backendUrl}. Detail: ${errorMessage}`;
+        displayError = `Tidak dapat terhubung atau ada masalah CORS dengan server backend. Pastikan server (Gradio/Colab atau FastAPI/HF Spaces) berjalan dan dapat diakses di ${backendUrl}. Detail teknis: ${errorMessage}`;
       }
       setError(displayError);
     } finally {
@@ -172,7 +206,7 @@ function App() {
         <p>Powered by React, dan AI.</p>
         {/* 
         <p className="text-xs mt-1">
-          DevInfo (DEBUG): Backend URL -> {backendUrl || "Not set/configured"}
+          DevInfo: Backend URL -> {backendUrl || "Not set/configured"}
         </p>
         */}
       </footer>
