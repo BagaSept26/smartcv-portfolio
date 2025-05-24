@@ -8,37 +8,25 @@ function App() {
   const [summary, setSummary] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [backendUrl, setBackendUrl] = useState('');
+  const [backendUrl, setBackendUrl] = useState(''); // Akan berisi URL publik Gradio
 
   useEffect(() => {
+    // Logika penentuan backendUrl (URL Gradio akan diset via REACT_APP_BACKEND_URL di Vercel)
     let determinedBackendUrl = '';
-    const defaultLocalhostUrl = 'http://localhost:8000';
-
-    // Log ini bisa dipertahankan jika Anda ingin melihat URL mana yang digunakan saat runtime awal,
-    // atau bisa dihapus jika sudah yakin.
-    // console.log("App.jsx: Initializing. REACT_APP_BACKEND_URL:", process.env.REACT_APP_BACKEND_URL, "GITPOD_WORKSPACE_URL:", typeof window !== 'undefined' ? window.GITPOD_WORKSPACE_URL : "N/A");
+    const defaultLocalhostUrl = 'http://localhost:8000'; // Kurang relevan untuk Gradio, tapi sebagai fallback
 
     if (process.env.REACT_APP_BACKEND_URL) {
-      // Prioritas 1: Untuk Vercel (atau jika .env diset manual dengan variabel ini)
       determinedBackendUrl = process.env.REACT_APP_BACKEND_URL;
-      // console.log("App.jsx: Using REACT_APP_BACKEND_URL:", determinedBackendUrl);
-    } else if (typeof window !== 'undefined' && window.GITPOD_WORKSPACE_URL) {
-      // Prioritas 2: Untuk Gitpod
-      const gitpodWorkspaceUrl = window.GITPOD_WORKSPACE_URL;
-      const backendPort = 8000;
-      const gitpodUrlWithoutProtocol = gitpodWorkspaceUrl.startsWith('https://')
-                                     ? gitpodWorkspaceUrl.substring("https://".length)
-                                     : gitpodWorkspaceUrl;
-      determinedBackendUrl = `https://${backendPort}-${gitpodUrlWithoutProtocol}`;
-      // console.log("App.jsx: Using Gitpod URL:", determinedBackendUrl);
+      // console.log("App.jsx: Using REACT_APP_BACKEND_URL (for Gradio):", determinedBackendUrl);
     } else {
-      // Prioritas 3: Fallback untuk pengembangan lokal biasa
-      determinedBackendUrl = defaultLocalhostUrl;
-      // console.warn("App.jsx: Fallback: Using localhost URL:", determinedBackendUrl);
+      // Untuk pengembangan lokal jika ingin mengetes dengan URL Gradio yang di-hardcode sementara
+      // determinedBackendUrl = "https://xxxxxxxxxx.gradio.live"; // Ganti dengan URL Gradio Anda jika tes lokal
+      console.warn("App.jsx: REACT_APP_BACKEND_URL tidak diset. Frontend mungkin tidak bisa menghubungi backend Gradio.");
+      // Jika tidak ada, mungkin set ke string kosong atau fallback yang tidak akan jalan agar error jelas
+      determinedBackendUrl = ''; 
     }
     
     setBackendUrl(determinedBackendUrl);
-    // console.log("App.jsx: Final backendUrl in state:", determinedBackendUrl);
 
   }, []);
 
@@ -47,53 +35,92 @@ function App() {
     setError(null);
     setSummary('');
 
-    // Validasi backendUrl sebelum fetch
     if (!backendUrl) {
-        const errMsg = "Konfigurasi URL Backend bermasalah. URL tidak diset.";
+        const errMsg = "URL Backend (Gradio) belum dikonfigurasi. Set REACT_APP_BACKEND_URL di Vercel.";
         setError(errMsg);
-        console.error("App.jsx handleGenerateSummary Error:", errMsg, "Current backendUrl state is empty.");
+        console.error("App.jsx handleGenerateSummary Error:", errMsg);
         setIsLoading(false);
         return;
     }
-    // Hapus console.log yang terlalu detail jika sudah tidak perlu
-    // console.log(`App.jsx: Submitting to backend: ${backendUrl}/summarize`);
+
+    // Default Gradio API endpoint. VERIFIKASI INI DENGAN INSPEKSI NETWORK!
+    // Bisa jadi /api/run/ atau path lain tergantung versi Gradio atau setup.
+    let gradioApiEndpointPath = "/api/predict/"; 
+
+    // Cek apakah backendUrl sudah mengandung path API (misal dari copy-paste yang salah)
+    // Atau jika backendUrl tidak diakhiri slash
+    let finalApiUrl = backendUrl;
+    if (!finalApiUrl.endsWith('/')) {
+        finalApiUrl += '/';
+    }
+    if (!finalApiUrl.includes('/api/')) { // Jika path API belum ada di backendUrl
+        finalApiUrl = finalApiUrl.endsWith('/') 
+                      ? `${finalApiUrl.slice(0, -1)}${gradioApiEndpointPath}` 
+                      : `${finalApiUrl}${gradioApiEndpointPath}`;
+    } else {
+        // Jika sudah ada /api/, pastikan pathnya benar dan tidak duplikat
+        // Ini hanya asumsi sederhana, mungkin perlu logika lebih canggih jika URL bisa bervariasi
+        if (!finalApiUrl.endsWith(gradioApiEndpointPath.substring(1))) { // Hapus slash awal dari path untuk perbandingan
+             console.warn(`App.jsx: backendUrl sudah mengandung /api/ tapi pathnya mungkin berbeda dari asumsi '${gradioApiEndpointPath}'. Menggunakan URL apa adanya: ${finalApiUrl}`);
+        }
+    }
+
+
+    console.log(`App.jsx: Submitting to Gradio API: ${finalApiUrl}`);
 
     try {
-      const response = await fetch(`${backendUrl}/summarize`, {
+      const payload = {
+        data: [inputText] // Input teks sebagai elemen pertama array untuk Gradio
+      };
+
+      const response = await fetch(finalApiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ text: inputText }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
         let errorData;
-        let responseTextForError = ''; // Untuk menyimpan teks respons jika parsing JSON gagal
+        let responseTextForError = '';
         try {
-            // Coba baca sebagai teks dulu, karena kadang error 500 dari proxy/server tidak JSON
-            responseTextForError = await response.clone().text(); // clone() agar bisa dibaca lagi sebagai JSON jika perlu
+            responseTextForError = await response.clone().text();
             errorData = await response.json(); 
         } catch (e) {
-            // Jika parsing JSON gagal, gunakan responseTextForError atau statusText
             errorData = { detail: responseTextForError || response.statusText || `HTTP error! status: ${response.status}` };
         }
-        throw new Error(`(${response.status}) ${errorData.detail || 'Gagal mengambil data dari server.'} - URL: ${response.url}`);
+        const gradioErrorMsg = errorData.error || errorData.detail || 'Gagal mengambil data dari server Gradio.';
+        throw new Error(`(${response.status}) ${gradioErrorMsg} - URL: ${response.url}`);
       }
 
       const data = await response.json();
-      setSummary(data.summary);
+      
+      if (data && data.data && Array.isArray(data.data) && data.data.length > 0) {
+        let resultSummary = data.data[0];
+        if (typeof resultSummary === 'string' && (resultSummary.startsWith("ERROR:") || resultSummary.startsWith("Error:"))) {
+            setError(`Backend Gradio mengembalikan error: ${resultSummary}`);
+            setSummary('');
+        } else {
+            setSummary(resultSummary);
+        }
+      } else if (data && data.error) { // Kadang Gradio mengembalikan error di field 'error'
+        setError(`Backend Gradio mengembalikan error: ${data.error}`);
+        setSummary('');
+        console.error("App.jsx: Error dari Gradio API:", data.error);
+      }
+      else {
+        console.error("App.jsx: Respons Gradio tidak dalam format yang diharapkan:", data);
+        throw new Error("Format respons dari Gradio API tidak sesuai.");
+      }
 
     } catch (err) {
-      // Log error ini penting untuk debugging di production jika terjadi masalah
-      console.error("App.jsx: Error during API call to /summarize:", err);
+      console.error("App.jsx: Error during API call to Gradio:", err);
       const errorMessage = err.message || "Terjadi kesalahan yang tidak diketahui.";
-      
       let displayError = errorMessage;
-      // Periksa apakah pesan error sudah informatif, jika tidak, tambahkan konteks
-      if (!(errorMessage.includes("URL:") || errorMessage.toLowerCase().includes("backend")) && 
+      if (!(errorMessage.includes("URL:") || errorMessage.toLowerCase().includes("gradio")) && 
           (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError") || errorMessage.toLowerCase().includes("cors"))) {
-        displayError = `Tidak dapat terhubung atau ada masalah CORS dengan server backend. Pastikan server backend berjalan dan dapat diakses di ${backendUrl}. Detail: ${errorMessage}`;
+        displayError = `Tidak dapat terhubung atau ada masalah CORS dengan server Gradio di ${backendUrl}. Pastikan Colab berjalan dan URL publik Gradio benar. Detail: ${errorMessage}`;
       }
       setError(displayError);
     } finally {
@@ -108,7 +135,7 @@ function App() {
           SmartCV <span className="text-2xl sm:text-3xl text-slate-400 align-middle">Generator</span>
         </h1>
         <p className="text-slate-300 mt-3 text-sm sm:text-base">
-          Masukkan pengalaman kerja Anda dan biarkan AI membuat ringkasan CV yang ATS-friendly.
+          Masukkan pengalaman kerja Anda dan biarkan AI membuat ringkasan CV yang ATS-friendly. (Backend via Gradio/Colab)
         </p>
       </header>
 
@@ -126,9 +153,8 @@ function App() {
 
       <footer className="w-full max-w-3xl text-center mt-12 mb-6 text-slate-500 text-xs sm:text-sm">
         <p>© {new Date().getFullYear()} Bagas Septian. Dibuat untuk Portofolio.</p>
-        <p>Powered by React, FastAPI, dan Model AI.</p>
-        {/* Anda bisa hapus atau biarkan log URL backend ini untuk tahap awal produksi jika masih ingin mudah cek */}
-        {/* <p className="text-xs mt-1">DevInfo: Backend URL -> {backendUrl || "Not set"}</p> */}
+        <p>Powered by React, Gradio (Colab), dan Model AI.</p>
+        {/* <p className="text-xs mt-1">DevInfo: Gradio Backend URL -> {backendUrl || "Not set"}</p> */}
       </footer>
     </div>
   );
