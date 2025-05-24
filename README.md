@@ -1,4 +1,3 @@
-```markdown
 # SmartCV Generator (Development Branch 🧠📄✨)
 
 **Status Saat Ini (Branch `development`): Fungsional di Gitpod dengan Model AI Dummy/Ringan.**
@@ -146,4 +145,3 @@ smartcv-project/
 *   Jaga agar dependensi tetap update.
 *   Perhatikan penggunaan resource saat bekerja dengan model AI di Gitpod (terutama RAM).
 
-```
