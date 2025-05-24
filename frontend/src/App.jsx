@@ -11,45 +11,51 @@ function App() {
   const [backendUrl, setBackendUrl] = useState('');
 
   useEffect(() => {
-    let determinedBackendUrl = '';
-    const defaultLocalhostUrl = 'http://localhost:8000'; // Akan digunakan jika kondisi lain false
+    // Selalu inisialisasi determinedBackendUrl dengan defaultLocalhostUrl terlebih dahulu.
+    // Ini memastikan defaultLocalhostUrl "digunakan" dalam penugasan.
+    const defaultLocalhostUrl = 'http://localhost:8000'; // Baris ~16
+    let determinedBackendUrl = defaultLocalhostUrl; // Langsung gunakan di sini
 
-    // Uncomment log di bawah ini jika Anda ingin melihat variabel mana yang terdeteksi saat startup.
-    // Di produksi Vercel, Anda tidak akan melihat log ini di console browser, tapi berguna saat dev.
+    // Uncomment log ini jika perlu untuk debugging saat pengembangan
     /*
     console.log(
       "App.jsx useEffect: Initializing URL detection.",
+      "Initial determinedBackendUrl (from defaultLocalhostUrl):", determinedBackendUrl,
       "REACT_APP_BACKEND_URL:", process.env.REACT_APP_BACKEND_URL,
       "window.GITPOD_WORKSPACE_URL:", typeof window !== 'undefined' ? window.GITPOD_WORKSPACE_URL : "N/A"
     );
     */
 
     if (process.env.REACT_APP_BACKEND_URL) {
-      // Prioritas 1: Digunakan oleh Vercel (dari Environment Variables di Vercel)
-      // atau jika Anda set .env file secara manual dengan variabel ini.
+      // Prioritas 1: Digunakan oleh Vercel atau jika .env diset.
+      // Ini akan meng-override nilai dari defaultLocalhostUrl.
       determinedBackendUrl = process.env.REACT_APP_BACKEND_URL;
-      // console.log("App.jsx useEffect: Using REACT_APP_BACKEND_URL:", determinedBackendUrl);
+      // console.log("App.jsx useEffect: Overridden by REACT_APP_BACKEND_URL:", determinedBackendUrl);
     } else if (typeof window !== 'undefined' && window.GITPOD_WORKSPACE_URL) {
-      // Prioritas 2: Digunakan untuk pengembangan di Gitpod
+      // Prioritas 2: Digunakan untuk pengembangan di Gitpod.
+      // Ini juga akan meng-override nilai dari defaultLocalhostUrl.
       const gitpodWorkspaceUrl = window.GITPOD_WORKSPACE_URL;
-      const backendPort = 8000; // Port backend Anda di Gitpod
+      const backendPort = 8000;
       const gitpodUrlWithoutProtocol = gitpodWorkspaceUrl.startsWith('https://')
                                      ? gitpodWorkspaceUrl.substring("https://".length)
                                      : gitpodWorkspaceUrl;
       determinedBackendUrl = `https://${backendPort}-${gitpodUrlWithoutProtocol}`;
-      // console.log("App.jsx useEffect: Using Gitpod URL:", determinedBackendUrl);
-    } else {
-      // Prioritas 3: Fallback untuk pengembangan lokal murni (tanpa .env, tanpa Gitpod)
-      // Di sini 'defaultLocalhostUrl' digunakan.
-      determinedBackendUrl = defaultLocalhostUrl;
-      console.warn("App.jsx useEffect: Fallback - Using default localhost URL:", determinedBackendUrl);
+      // console.log("App.jsx useEffect: Overridden by Gitpod URL:", determinedBackendUrl);
+    }
+    // Jika kedua kondisi di atas false, determinedBackendUrl akan tetap bernilai defaultLocalhostUrl.
+    // Dan kita bisa tambahkan log jika itu yang terjadi:
+    else if (determinedBackendUrl === defaultLocalhostUrl) {
+        // Log ini hanya akan muncul jika tidak ada REACT_APP_BACKEND_URL dan tidak ada GITPOD_WORKSPACE_URL
+        console.warn("App.jsx useEffect: Using default localhost URL as fallback:", determinedBackendUrl);
     }
     
     setBackendUrl(determinedBackendUrl);
     // console.log("App.jsx useEffect: Final backendUrl in state:", determinedBackendUrl);
 
-  }, []); // Dependency array kosong, hanya run sekali saat mount
+  }, []);
 
+  // ... (handleGenerateSummary dan return JSX sama seperti kode Opsi 1 yang saya berikan sebelumnya) ...
+  // Pastikan Anda memiliki implementasi lengkap handleGenerateSummary dari contoh sebelumnya.
   const handleGenerateSummary = async (inputText) => {
     setIsLoading(true);
     setError(null);
@@ -63,15 +69,11 @@ function App() {
         return;
     }
 
-    // Konstruksi URL API berdasarkan apakah backendUrl adalah Gradio atau FastAPI biasa
     let finalApiUrl = backendUrl;
-    // Asumsi: Jika URL dari REACT_APP_BACKEND_URL adalah URL Gradio (misal, diakhiri .gradio.live)
-    // Maka kita tambahkan path API Gradio. Jika tidak, kita asumsikan itu FastAPI biasa.
-    // Ini adalah heuristik sederhana, bisa disempurnakan.
-    const isLikelyGradioUrl = backendUrl.includes('.gradio.live'); // Atau cara lain untuk deteksi Gradio
+    const isLikelyGradioUrl = backendUrl.includes('.gradio.live'); 
     
     if (isLikelyGradioUrl) {
-        const gradioApiEndpointPath = "/api/predict/"; // Verifikasi path ini!
+        const gradioApiEndpointPath = "/api/predict/"; 
         if (!finalApiUrl.endsWith('/')) {
             finalApiUrl += '/';
         }
@@ -81,17 +83,13 @@ function App() {
                           : `${finalApiUrl}${gradioApiEndpointPath}`;
         }
     } else {
-        // Untuk FastAPI biasa, tambahkan /summarize
         if (!finalApiUrl.endsWith('/')) {
             finalApiUrl += '/';
         }
         finalApiUrl += 'summarize';
     }
 
-    // console.log(`App.jsx handleGenerateSummary: Submitting to final API URL: ${finalApiUrl}`);
-
     try {
-      // Payload berbeda untuk Gradio dan FastAPI
       const payload = isLikelyGradioUrl 
                       ? { data: [inputText] } 
                       : { text: inputText };
@@ -128,7 +126,7 @@ function App() {
         } else {
           throw new Error("Format respons dari Gradio API tidak sesuai.");
         }
-      } else { // FastAPI
+      } else { 
         if (data && data.summary) {
           resultSummary = data.summary;
         } else {
@@ -156,8 +154,9 @@ function App() {
       setIsLoading(false);
     }
   };
-
+  
   return (
+    // ... (JSX sama seperti sebelumnya) ...
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-slate-100 flex flex-col items-center p-4 selection:bg-sky-500 selection:text-white">
       <header className="w-full max-w-3xl text-center my-8 md:my-12">
         <h1 className="text-4xl sm:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-cyan-300">
@@ -183,11 +182,6 @@ function App() {
       <footer className="w-full max-w-3xl text-center mt-12 mb-6 text-slate-500 text-xs sm:text-sm">
         <p>© {new Date().getFullYear()} Bagas Septian. Dibuat untuk Portofolio.</p>
         <p>Powered by React, dan AI.</p>
-        {/* 
-        <p className="text-xs mt-1">
-          DevInfo: Backend URL -> {backendUrl || "Not set/configured"}
-        </p>
-        */}
       </footer>
     </div>
   );
