@@ -8,54 +8,57 @@ function App() {
   const [summary, setSummary] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [backendUrl, setBackendUrl] = useState(''); // Default string kosong
+  const [backendUrl, setBackendUrl] = useState('');
 
-  // Efek untuk menentukan URL backend saat komponen dimuat
   useEffect(() => {
-    // --- HARDCODE URL BACKEND GITPOD ANDA DI SINI ---
-    // !!! PENTING: GANTI STRING DI BAWAH INI DENGAN URL BACKEND GITPOD ANDA YANG SEBENARNYA (PORT 8000) !!!
-    const yourActualGitpodBackendUrl = "https://8000-bagasept26-smartcvportf-gfmr49aks7w.ws-us119.gitpod.io";
-    // Contoh penggantian:
-    // const yourActualGitpodBackendUrl = "https://8000-bagasept26-smartcvportf-gfmr49aks7w.ws-us119.gitpod.io"; 
+    let determinedBackendUrl = '';
+    const defaultLocalhostUrl = 'http://localhost:8000';
 
-    // Cek sederhana apakah placeholder masih ada (untuk pengingat)
-    if (yourActualGitpodBackendUrl.includes("GANTI_INI_DENGAN_URL_BACKEND_GITPOD_ANDA_YANG_SEBENARNYA")) {
-        const placeholderErrorMsg = "APP.JSX ERROR: Placeholder URL backend 'yourActualGitpodBackendUrl' belum diganti dengan URL yang benar. Silakan edit file frontend/src/App.jsx.";
-        console.error(placeholderErrorMsg);
-        // Anda bisa set error di sini agar terlihat di UI saat load jika mau, tapi validasi di handleGenerateSummary juga akan menangkapnya.
-        // setError(placeholderErrorMsg); 
-        setBackendUrl(''); // Set ke kosong agar jelas gagal di validasi handleGenerateSummary
-        return; 
+    // Log ini bisa dipertahankan jika Anda ingin melihat URL mana yang digunakan saat runtime awal,
+    // atau bisa dihapus jika sudah yakin.
+    // console.log("App.jsx: Initializing. REACT_APP_BACKEND_URL:", process.env.REACT_APP_BACKEND_URL, "GITPOD_WORKSPACE_URL:", typeof window !== 'undefined' ? window.GITPOD_WORKSPACE_URL : "N/A");
+
+    if (process.env.REACT_APP_BACKEND_URL) {
+      // Prioritas 1: Untuk Vercel (atau jika .env diset manual dengan variabel ini)
+      determinedBackendUrl = process.env.REACT_APP_BACKEND_URL;
+      // console.log("App.jsx: Using REACT_APP_BACKEND_URL:", determinedBackendUrl);
+    } else if (typeof window !== 'undefined' && window.GITPOD_WORKSPACE_URL) {
+      // Prioritas 2: Untuk Gitpod
+      const gitpodWorkspaceUrl = window.GITPOD_WORKSPACE_URL;
+      const backendPort = 8000;
+      const gitpodUrlWithoutProtocol = gitpodWorkspaceUrl.startsWith('https://')
+                                     ? gitpodWorkspaceUrl.substring("https://".length)
+                                     : gitpodWorkspaceUrl;
+      determinedBackendUrl = `https://${backendPort}-${gitpodUrlWithoutProtocol}`;
+      // console.log("App.jsx: Using Gitpod URL:", determinedBackendUrl);
+    } else {
+      // Prioritas 3: Fallback untuk pengembangan lokal biasa
+      determinedBackendUrl = defaultLocalhostUrl;
+      // console.warn("App.jsx: Fallback: Using localhost URL:", determinedBackendUrl);
     }
+    
+    setBackendUrl(determinedBackendUrl);
+    // console.log("App.jsx: Final backendUrl in state:", determinedBackendUrl);
 
-    setBackendUrl(yourActualGitpodBackendUrl);
-    console.log("App.jsx: Menggunakan URL Backend Gitpod (HARDCODED):", yourActualGitpodBackendUrl);
-
-  }, []); // Dependency array kosong agar hanya jalan sekali saat mount
+  }, []);
 
   const handleGenerateSummary = async (inputText) => {
     setIsLoading(true);
     setError(null);
     setSummary('');
 
-    console.log("App.jsx: handleGenerateSummary dipanggil. Backend URL yang akan digunakan:", backendUrl);
-
     // Validasi backendUrl sebelum fetch
-    if (!backendUrl || backendUrl.includes("GANTI_INI_DENGAN_URL_BACKEND_GITPOD_ANDA_YANG_SEBENARNYA")) {
-        let errMsg = "URL Backend tidak valid atau placeholder di App.jsx belum diganti.";
-        if (backendUrl.includes("GANTI_INI_DENGAN_URL_BACKEND_GITPOD_ANDA_YANG_SEBENARNYA")) {
-            errMsg = "KESALAHAN DI KODE: Placeholder URL backend di App.jsx belum diganti dengan URL yang benar. Edit file frontend/src/App.jsx.";
-        } else if (!backendUrl) {
-            errMsg = `URL Backend kosong. Periksa useEffect di App.jsx. Mungkin placeholder belum diganti atau ada masalah lain.`;
-        }
+    if (!backendUrl) {
+        const errMsg = "Konfigurasi URL Backend bermasalah. URL tidak diset.";
         setError(errMsg);
-        console.error("App.jsx: Kesalahan konfigurasi Backend URL sebelum fetch:", errMsg, "Nilai backendUrl saat ini:", `'${backendUrl}'`);
+        console.error("App.jsx handleGenerateSummary Error:", errMsg, "Current backendUrl state is empty.");
         setIsLoading(false);
         return;
     }
+    // Hapus console.log yang terlalu detail jika sudah tidak perlu
+    // console.log(`App.jsx: Submitting to backend: ${backendUrl}/summarize`);
 
     try {
-      console.log(`App.jsx: Mencoba fetch ke endpoint: ${backendUrl}/summarize`);
       const response = await fetch(`${backendUrl}/summarize`, {
         method: 'POST',
         headers: {
@@ -66,17 +69,14 @@ function App() {
 
       if (!response.ok) {
         let errorData;
+        let responseTextForError = ''; // Untuk menyimpan teks respons jika parsing JSON gagal
         try {
+            // Coba baca sebagai teks dulu, karena kadang error 500 dari proxy/server tidak JSON
+            responseTextForError = await response.clone().text(); // clone() agar bisa dibaca lagi sebagai JSON jika perlu
             errorData = await response.json(); 
         } catch (e) {
-            // Jika body bukan JSON atau tidak ada body, coba baca sebagai teks lalu gunakan statusText
-            let responseTextError = '';
-            try {
-                responseTextError = await response.text();
-            } catch (textErr) {
-                // Abaikan jika pembacaan teks juga gagal
-            }
-            errorData = { detail: responseTextError || response.statusText || `HTTP error! status: ${response.status}` };
+            // Jika parsing JSON gagal, gunakan responseTextForError atau statusText
+            errorData = { detail: responseTextForError || response.statusText || `HTTP error! status: ${response.status}` };
         }
         throw new Error(`(${response.status}) ${errorData.detail || 'Gagal mengambil data dari server.'} - URL: ${response.url}`);
       }
@@ -85,14 +85,15 @@ function App() {
       setSummary(data.summary);
 
     } catch (err) {
-      console.error("App.jsx: Gagal menghasilkan ringkasan (error di blok catch):", err);
+      // Log error ini penting untuk debugging di production jika terjadi masalah
+      console.error("App.jsx: Error during API call to /summarize:", err);
       const errorMessage = err.message || "Terjadi kesalahan yang tidak diketahui.";
-      // Periksa apakah pesan error sudah mencakup URL (dari blok if !response.ok)
-      // Jika tidak, tambahkan informasi URL dan koneksi
+      
       let displayError = errorMessage;
+      // Periksa apakah pesan error sudah informatif, jika tidak, tambahkan konteks
       if (!(errorMessage.includes("URL:") || errorMessage.toLowerCase().includes("backend")) && 
           (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError") || errorMessage.toLowerCase().includes("cors"))) {
-        displayError = `Tidak dapat terhubung atau ada masalah CORS dengan server backend di ${backendUrl}. Pastikan server backend berjalan, URL benar, dan CORS dikonfigurasi. Detail: ${errorMessage}`;
+        displayError = `Tidak dapat terhubung atau ada masalah CORS dengan server backend. Pastikan server backend berjalan dan dapat diakses di ${backendUrl}. Detail: ${errorMessage}`;
       }
       setError(displayError);
     } finally {
@@ -124,10 +125,10 @@ function App() {
       </main>
 
       <footer className="w-full max-w-3xl text-center mt-12 mb-6 text-slate-500 text-xs sm:text-sm">
-        <p>© {new Date().getFullYear()} [Ganti dengan Nama Anda]. Dibuat untuk Portofolio.</p>
+        <p>© {new Date().getFullYear()} Bagas Septian. Dibuat untuk Portofolio.</p>
         <p>Powered by React, FastAPI, dan Model AI.</p>
-        {/* Untuk debugging, tampilkan URL backend yang digunakan */}
-        {/* <p className="text-xs mt-1">Current Backend URL: {backendUrl.includes("GANTI_INI_DENGAN_URL_BACKEND_GITPOD_ANDA_YANG_SEBENARNYA") ? "PLACEHOLDER BELUM DIGANTI!" : (backendUrl || "Kosong/Belum diset")}</p> */}
+        {/* Anda bisa hapus atau biarkan log URL backend ini untuk tahap awal produksi jika masih ingin mudah cek */}
+        {/* <p className="text-xs mt-1">DevInfo: Backend URL -> {backendUrl || "Not set"}</p> */}
       </footer>
     </div>
   );
